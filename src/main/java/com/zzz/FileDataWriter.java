@@ -62,10 +62,31 @@ public class FileDataWriter implements Closeable {
      *
      * @param path
      */
-    private FileDataWriter(String path) {
+    private FileDataWriter(String path, WriteMode writeMode) throws IOException {
         this.path = path;
-        if (FileUtil.exist(new File(path))) {
-            throw new IllegalArgumentException(path + "  文件已存在");
+        File file = new File(path);
+        if (file.exists()) {
+            if (WriteMode.NOT_ALLOW_REPEATED.equals(writeMode)) {
+                throw new IllegalArgumentException(path + "  文件已存在，不可重复写入");
+            } else if (WriteMode.OVERRIDE.equals(writeMode)) {
+                FileUtil.del(file);
+            } else if (WriteMode.APPEND.equals(writeMode)) {
+                String cfgStr = FileUtil.readUtf8String(new File(buildPath(this.path, Constants.CFG_FILE_NAME)));
+                Cfg cfg = JSON.parseObject(cfgStr, Cfg.class);
+                this.totalSize = cfg.getTotalSize();
+                this.indexFixedWidth = cfg.getNewIndexFixedWidth();
+                this.currentRow = cfg.getNewCurrentRow();
+                this.columnIndexWidthMap = cfg.getColumnIndexWidthMap();
+
+                //build配置的 charset、fileMaxSize、indexFixedWidthFactor将失效
+                this.charset = cfg.getCharset();
+                this.fileMaxSize = cfg.getFileMaxSize();
+                this.indexFixedWidthFactor = cfg.getIndexFixedWidthFactor();
+
+                createWriter();
+                contentRafWriter.getRaf().seek(cfg.getNewDataFilePointer());
+                indexRafWriter.getRaf().seek(cfg.getNewIndexFilePointer());
+            }
         }
     }
 
@@ -153,7 +174,8 @@ public class FileDataWriter implements Closeable {
     }
 
     File buildFile(String suffix) {
-        String fileName = (totalSize + 1) + "-" + (totalSize + fileMaxSize);
+        Integer startFileIndex = totalSize + 1 - (totalSize) % fileMaxSize;
+        String fileName = (startFileIndex) + "-" + (startFileIndex - 1 + fileMaxSize);
         File file = new File(buildPath(this.path, fileName.concat(suffix)));
         return file;
     }
@@ -176,19 +198,21 @@ public class FileDataWriter implements Closeable {
 
     @Override
     public void close() throws IOException {
-        closeWriter();
-
         //写入配置文件
         Cfg cfg = new Cfg();
         cfg.setFileMaxSize(fileMaxSize);
         cfg.setTotalSize(totalSize);
         cfg.setCharset(charset);
         cfg.setColumnIndexWidthMap(columnIndexWidthMap);
+        cfg.setNewIndexFixedWidth(indexFixedWidth);
+        cfg.setNewCurrentRow(currentRow);
+        cfg.setIndexFixedWidthFactor(indexFixedWidthFactor);
+        cfg.setNewDataFilePointer(contentRafWriter.getRaf().getFilePointer());
+        cfg.setNewIndexFilePointer(indexRafWriter.getRaf().getFilePointer());
         FileUtil.writeUtf8String(JSON.toJSONString(cfg), new File(buildPath(this.path, Constants.CFG_FILE_NAME)));
+
+        closeWriter();
     }
-
-
-
 
 
     public static FileDataWriterBuilder builder() {
@@ -203,12 +227,18 @@ public class FileDataWriter implements Closeable {
          * 默认基于写入的第一条数据的宽度+3
          */
         private Long indexFixedWidthFactor = 3l;
+        private WriteMode writeMode = WriteMode.NOT_ALLOW_REPEATED;
 
         private FileDataWriterBuilder() {
         }
 
         public FileDataWriterBuilder withFileMaxSize(Integer fileMaxSize) {
             this.fileMaxSize = fileMaxSize;
+            return this;
+        }
+
+        public FileDataWriterBuilder withWriteMode(WriteMode writeMode) {
+            this.writeMode = writeMode;
             return this;
         }
 
@@ -222,11 +252,13 @@ public class FileDataWriter implements Closeable {
             return this;
         }
 
-        public FileDataWriter build(String path) {
-            FileDataWriter fileDataWriter = new FileDataWriter(path);
-            fileDataWriter.charset = this.charset;
-            fileDataWriter.fileMaxSize = this.fileMaxSize;
-            fileDataWriter.indexFixedWidthFactor = this.indexFixedWidthFactor;
+        public FileDataWriter build(String path) throws IOException {
+            FileDataWriter fileDataWriter = new FileDataWriter(path, writeMode);
+            if (!WriteMode.APPEND.equals(writeMode) || fileDataWriter.totalSize == 0) {
+                fileDataWriter.charset = this.charset;
+                fileDataWriter.fileMaxSize = this.fileMaxSize;
+                fileDataWriter.indexFixedWidthFactor = this.indexFixedWidthFactor;
+            }
             return fileDataWriter;
         }
     }

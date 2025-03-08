@@ -4,19 +4,21 @@ package com.zzz.utils.file.writer;
 import java.io.*;
 import java.nio.charset.Charset;
 
-public class BufferedRandomAccessFileWriter implements FileWriter {
-    private BufferedWriter writer;
+/**
+ * 用  RandomAccessFile 写文件
+ */
+public class BufferedRandomAccessFileWriter extends AbstractBufferFileWriter {
     private RandomAccessFile raf;
+
 
     public BufferedRandomAccessFileWriter(File file, Charset charset) throws IOException {
         raf = new RandomAccessFile(file, "rw");
-
         OutputStreamWriter outputStreamWriter = new OutputStreamWriter(new FileOutputStream(raf.getFD()), charset);
-        writer = new BufferedWriter(outputStreamWriter);
+        init(outputStreamWriter);
     }
 
     @Override
-    public long getPosition() throws IOException {
+    long getFilePosition() throws IOException {
         return raf.getFilePointer();
     }
 
@@ -26,26 +28,9 @@ public class BufferedRandomAccessFileWriter implements FileWriter {
     }
 
     @Override
-    public void writeLine(String data) throws IOException {
-        writer.write(data);
-        writer.newLine();
-    }
-
-    @Override
-    public void write(String data) throws IOException {
-        writer.write(data);
-    }
-
-    @Override
-    public void flush() throws IOException {
-        writer.flush();
-    }
-
-    @Override
     public void close() throws IOException {
-        writer.close();
+        super.close();
         raf.close();
     }
-
 
 }

@@ -121,10 +121,11 @@ public class FileDataWriter implements Closeable {
         if (contentRafWriter != null) {
             //写入前当前行的偏移量
             long filePointer = contentRafWriter.getPosition();
-
             //写入数据
             contentRafWriter.writeLine(data);
-            contentRafWriter.flush();
+            //不实时flush，否则每行数据量小的时候写入性能太慢，但同时也会导致出现问题丢失的数据会变多。
+            // 不过如果真的会出现问题丢失数据，丢多丢少无所谓了,毕竟没做事务和异常处理机制。
+//            contentRafWriter.flush();
 
             //计算写入后行偏移量的宽度
             int curIndexWith = (contentRafWriter.getPosition() + "").length();
@@ -138,8 +139,9 @@ public class FileDataWriter implements Closeable {
             //以固定宽度将索引写入文件,后续就可以基于要读取的行数算出索引在第几个字节的地方,读取到索引后再基于索引读取具体的行
             indexRafWriter.write(String.format(numberFormat, filePointer));
             //换行后索引文件看起来更清晰，调试时可以打开看数据
-//            indexWriter.newLine();
-            indexRafWriter.flush();
+//            indexRafWriter.writeLine(String.format(numberFormat, filePointer));
+
+//            indexRafWriter.flush();
 
             currentRow++;
             totalSize++;

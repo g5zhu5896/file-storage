@@ -1,9 +1,14 @@
 import com.zzz.FileDataPageReader;
 import com.zzz.FileDataWriter;
-import com.zzz.WriteMode;
+import com.zzz.enums.WriteMode;
+import com.zzz.utils.file.reader.factory.FileReaderFactory;
+import com.zzz.utils.file.reader.factory.NioFileReaderFactory;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -11,12 +16,40 @@ import java.util.concurrent.Executors;
 public class Test {
     static ExecutorService executor = Executors.newFixedThreadPool(1);
 
+    private static FileReaderFactory fileFactory;
+
     public static void main(String[] args) {
         String path = "test";
+        fileFactory = new NioFileReaderFactory();
+        deleteFolder(path);
+        Long start = System.currentTimeMillis();
+        test(path, WriteMode.NOT_ALLOW_REPEATED);
+        Long time1 = (System.currentTimeMillis() - start) / 1000;
 
-        WriteMode writeMode = WriteMode.NOT_ALLOW_REPEATED;
-//        WriteMode writeMode = WriteMode.APPEND;
-//        test(path + File.separator + 20000 + "_" + 20000, 20000, 20000, 159, 1.7d, writeMode);
+//        deleteFolder(path);
+//        start = System.currentTimeMillis();
+//        test(path, WriteMode.APPEND);
+//        Long time2 = (System.currentTimeMillis() - start) / 1000;
+//
+//        deleteFolder(path);
+//        fileFactory = new BufferedRandomAccessFileFactory();
+//        start = System.currentTimeMillis();
+//        test(path, WriteMode.NOT_ALLOW_REPEATED);
+//        Long time3 = (System.currentTimeMillis() - start) / 1000;
+//
+//        deleteFolder(path);
+//        start = System.currentTimeMillis();
+//        test(path, WriteMode.APPEND);
+//        Long time4 = (System.currentTimeMillis() - start) / 1000;
+        System.out.println(time1);
+//        System.out.println(time2);
+//        System.out.println(time3);
+//        System.out.println(time4);
+        executor.shutdown();
+    }
+
+    private static void test(String path, WriteMode writeMode) {
+        //        test(path + File.separator + 20000 + "_" + 20000, 20000, 20000, 159, 1.7d, writeMode);
         Integer fileMaxSize = 10000;
         Integer totalSize = 10000;
         Integer pageSize = 160;
@@ -61,7 +94,6 @@ public class Test {
             test(path + File.separator + totalSize + "_" + fileMaxSize, fileMaxSize, totalSize, pageSize, 2d, writeMode);
             fileMaxSize++;
         }
-        executor.shutdown();
     }
 
     private static void test(String path, Integer totalSize, Integer fileMaxSize, Integer pageSize,
@@ -77,14 +109,14 @@ public class Test {
                         fileDataWriter.write(i + "");
                     }
                 } catch (IOException e) {
-                    e.printStackTrace();
+                    throw new IllegalArgumentException("写入异常",e);
                 }
                 try (FileDataWriter fileDataWriter = FileDataWriter.builder().withFileMaxSize(fileMaxSize).withWriteMode(writeMode).build(path)) {
                     for (Integer i = halfTotalSize; i <= realTotalSize; i++) {
                         fileDataWriter.write(i + "");
                     }
                 } catch (IOException e) {
-                    e.printStackTrace();
+                    throw new IllegalArgumentException("写入异常",e);
                 }
             } else {
                 //写入文件
@@ -93,7 +125,7 @@ public class Test {
                         fileDataWriter.write(i + "");
                     }
                 } catch (IOException e) {
-                    e.printStackTrace();
+                    throw new IllegalArgumentException("写入异常",e);
                 }
             }
 
@@ -163,5 +195,25 @@ public class Test {
         }
 //        });
     }
+
+    public static void deleteFolder(String folderPath) {
+        Path path = Paths.get(folderPath);
+        if (Files.exists(path)) {
+            try {
+                Files.walk(path) // 遍历文件夹及其子文件夹
+                        .sorted((p1, p2) -> -p1.compareTo(p2)) // 反向排序，先删除子文件
+                        .forEach(p -> {
+                            try {
+                                Files.delete(p); // 删除文件或空文件夹
+                            } catch (IOException e) {
+                                System.err.println("无法删除: " + p + ", 原因: " + e.getMessage());
+                            }
+                        });
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
 
 }

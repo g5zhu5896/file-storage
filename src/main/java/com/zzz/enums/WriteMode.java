@@ -1,4 +1,4 @@
-package com.zzz;
+package com.zzz.enums;
 
 /**
  * 写入模式

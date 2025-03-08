@@ -1,4 +1,4 @@
-package com.zzz;
+package com.zzz.constatns;
 
 public class Constants {
     //数据索引文件的后缀

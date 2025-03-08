@@ -1,4 +1,4 @@
-package com.zzz;
+package com.zzz.entity;
 
 import com.google.common.collect.Maps;
 import lombok.Data;

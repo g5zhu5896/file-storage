@@ -3,9 +3,15 @@ package com.zzz;
 import cn.hutool.core.io.FileUtil;
 import com.alibaba.fastjson2.JSON;
 import com.google.common.collect.Lists;
+import com.zzz.constatns.Constants;
+import com.zzz.entity.Cfg;
+import com.zzz.utils.file.reader.FileReader;
+import com.zzz.utils.file.reader.factory.BufferedRandomAccessFileReaderFactory;
+import com.zzz.utils.file.reader.factory.FileReaderFactory;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.Charset;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -13,17 +19,22 @@ import java.util.function.Function;
 public class FileDataPageReader {
     private Cfg cfg;
     private String path;
+    private FileReaderFactory fileFactory;
 
     /**
      * 请用这个类创建 {@link FileDataPageReaderBuilder}
      *
      * @param path
      */
-    private FileDataPageReader(String path) {
+    private FileDataPageReader(String path, FileReaderFactory fileFactory) {
         this.path = path;
         String cfgStr = FileUtil.readUtf8String(new File(buildPath(this.path, Constants.CFG_FILE_NAME)));
         this.cfg = JSON.parseObject(cfgStr, Cfg.class);
+        this.fileFactory = fileFactory;
+    }
 
+    private FileDataPageReader(String path) {
+        this(path, new BufferedRandomAccessFileReaderFactory());
     }
 
     /**
@@ -85,7 +96,7 @@ public class FileDataPageReader {
         return result;
     }
 
-    public Integer getTotalSize(){
+    public Integer getTotalSize() {
         return cfg.getTotalSize();
     }
 
@@ -116,12 +127,12 @@ public class FileDataPageReader {
      */
     private <T> void read(List<T> result, Integer currentRow, Integer fileStartIndex, Integer readSize, Function<String, T> function) {
         Integer curReadSize = 0;
-        try (BufferedRandomAccessFileReader contentReader = createContentReader(fileStartIndex);
-             BufferedRandomAccessFileReader indexReader = createIndexReader(fileStartIndex)) {
+        try (FileReader contentReader = createContentReader(fileStartIndex);
+             FileReader indexReader = createIndexReader(fileStartIndex)) {
             String content = "";
             Long seek = computeSeek(indexReader, currentRow, fileStartIndex);
-            contentReader.getRaf().seek(seek);
-            while ((content = contentReader.getReader().readLine()) != null) {
+            contentReader.setPosition(seek);
+            while ((content = contentReader.readLine()) != null) {
                 result.add(function.apply(content));
                 currentRow++;
                 curReadSize++;
@@ -148,7 +159,7 @@ public class FileDataPageReader {
      * @param fileStartIndex 当前文件的起始索引
      * @return
      */
-    private Long computeSeek(BufferedRandomAccessFileReader indexReader, Integer currentRow, Integer fileStartIndex) throws IOException {
+    private Long computeSeek(FileReader indexReader, Integer currentRow, Integer fileStartIndex) throws IOException {
         Long curIndexFix = 0l;
         Integer lastIndexColumn = 1;
         Long curIndexSeek = 0l;
@@ -192,23 +203,23 @@ public class FileDataPageReader {
         if (lastIndexColumn < currentRow) {
             curIndexSeek += (currentRow - lastIndexColumn) * curIndexFix;
         }
-        indexReader.getRaf().seek(curIndexSeek);
+        indexReader.setPosition(curIndexSeek);
         char[] chars = new char[curIndexFix.intValue()];
-        indexReader.getReader().read(chars);
+        indexReader.read(chars);
         return new Long(new String(chars));
     }
 
     //数据文件reader
-    private BufferedRandomAccessFileReader createContentReader(Integer fileStartIndex) throws IOException {
+    private FileReader createContentReader(Integer fileStartIndex) throws IOException {
         String filePath = buildPath(path, buildFileName(fileStartIndex, Constants.CONTENT_FILE_SUFFIX));
-        BufferedRandomAccessFileReader reader = new BufferedRandomAccessFileReader(filePath, cfg.getCharset());
+        FileReader reader = fileFactory.fileReader(filePath, Charset.forName(cfg.getCharset()));
         return reader;
     }
 
     //索引文件reader
-    private BufferedRandomAccessFileReader createIndexReader(Integer fileStartIndex) throws IOException {
+    private FileReader createIndexReader(Integer fileStartIndex) throws IOException {
         String filePath = buildPath(path, buildFileName(fileStartIndex, Constants.INDEX_FILE_SUFFIX));
-        BufferedRandomAccessFileReader reader = new BufferedRandomAccessFileReader(filePath, cfg.getCharset());
+        FileReader reader = fileFactory.fileReader(filePath, Charset.forName(cfg.getCharset()));
         return reader;
     }
 
@@ -238,11 +249,18 @@ public class FileDataPageReader {
 
     public static final class FileDataPageReaderBuilder {
 
+        private FileReaderFactory fileFactory = new BufferedRandomAccessFileReaderFactory();
+
+        public FileDataPageReaderBuilder withFileFactory(FileReaderFactory fileFactory) {
+            this.fileFactory = fileFactory;
+            return this;
+        }
+
         private FileDataPageReaderBuilder() {
         }
 
         public FileDataPageReader build(String path) {
-            FileDataPageReader fileDataPageReader = new FileDataPageReader(path);
+            FileDataPageReader fileDataPageReader = new FileDataPageReader(path, fileFactory);
             return fileDataPageReader;
         }
     }

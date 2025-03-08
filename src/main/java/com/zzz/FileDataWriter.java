@@ -3,11 +3,17 @@ package com.zzz;
 import cn.hutool.core.io.FileUtil;
 import com.alibaba.fastjson2.JSON;
 import com.google.common.collect.Maps;
+import com.zzz.constatns.Constants;
+import com.zzz.entity.Cfg;
+import com.zzz.enums.WriteMode;
+import com.zzz.utils.file.writer.FileWriter;
+import com.zzz.utils.file.writer.factory.BufferedRandomAccessFileWriterFactory;
+import com.zzz.utils.file.writer.factory.FileWriterFactory;
 
-import java.io.BufferedWriter;
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.Charset;
 import java.util.TreeMap;
 
 public class FileDataWriter implements Closeable {
@@ -51,19 +57,23 @@ public class FileDataWriter implements Closeable {
     /**
      * 用于写数据
      */
-    private BufferedRandomAccessFileWriter contentRafWriter;
+    private FileWriter contentRafWriter;
     /**
      * 用于写入索引， 索引对应行在文件中所在文件指针偏移量，可以基于索引快速定位到行所在位置
      */
-    private BufferedRandomAccessFileWriter indexRafWriter;
+    private FileWriter indexRafWriter;
+
+
+    private FileWriterFactory fileFactory;
 
     /**
      * 请用这个类创建 {@link FileDataWriterBuilder}
      *
      * @param path
      */
-    private FileDataWriter(String path, WriteMode writeMode) throws IOException {
+    private FileDataWriter(String path, WriteMode writeMode, FileWriterFactory fileFactory) throws IOException {
         this.path = path;
+        this.fileFactory = fileFactory;
         File file = new File(path);
         if (file.exists()) {
             if (WriteMode.NOT_ALLOW_REPEATED.equals(writeMode)) {
@@ -84,10 +94,14 @@ public class FileDataWriter implements Closeable {
                 this.indexFixedWidthFactor = cfg.getIndexFixedWidthFactor();
 
                 createWriter();
-                contentRafWriter.getRaf().seek(cfg.getNewDataFilePointer());
-                indexRafWriter.getRaf().seek(cfg.getNewIndexFilePointer());
+                contentRafWriter.setPosition(cfg.getNewDataFilePointer());
+                indexRafWriter.setPosition(cfg.getNewIndexFilePointer());
             }
         }
+    }
+
+    private FileDataWriter(String path, WriteMode writeMode) throws IOException {
+        this(path, writeMode, new BufferedRandomAccessFileWriterFactory());
     }
 
     public void write(String data) throws IOException {
@@ -106,29 +120,26 @@ public class FileDataWriter implements Closeable {
         }
         if (contentRafWriter != null) {
             //写入前当前行的偏移量
-            long filePointer = contentRafWriter.getRaf().getFilePointer();
+            long filePointer = contentRafWriter.getPosition();
 
             //写入数据
-            BufferedWriter contentWriter = contentRafWriter.getWriter();
-            contentWriter.write(data);
-            contentWriter.newLine();
-            contentWriter.flush();
+            contentRafWriter.writeLine(data);
+            contentRafWriter.flush();
 
             //计算写入后行偏移量的宽度
-            int curIndexWith = (contentRafWriter.getRaf().getFilePointer() + "").length();
+            int curIndexWith = (contentRafWriter.getPosition() + "").length();
             if (curIndexWith > indexFixedWidth) {
                 //每次都比当前的宽度多3位,可以考虑把这个改为外部配置,也可以是fileMaxFile的字符串长度
                 indexFixedWidth = curIndexWith + indexFixedWidthFactor;
                 columnIndexWidthMap.put(totalSize + 1, indexFixedWidth);
             }
 
-            BufferedWriter indexWriter = indexRafWriter.getWriter();
             String numberFormat = "%0" + indexFixedWidth + "d";
             //以固定宽度将索引写入文件,后续就可以基于要读取的行数算出索引在第几个字节的地方,读取到索引后再基于索引读取具体的行
-            indexWriter.write(String.format(numberFormat, filePointer));
+            indexRafWriter.write(String.format(numberFormat, filePointer));
             //换行后索引文件看起来更清晰，调试时可以打开看数据
 //            indexWriter.newLine();
-            indexWriter.flush();
+            indexRafWriter.flush();
 
             currentRow++;
             totalSize++;
@@ -144,9 +155,9 @@ public class FileDataWriter implements Closeable {
     }
 
 
-    private BufferedRandomAccessFileWriter createWriter(File newFile) {
+    private FileWriter createWriter(File newFile) {
         try {
-            BufferedRandomAccessFileWriter write = new BufferedRandomAccessFileWriter(newFile, charset);
+            FileWriter write = fileFactory.fileWriter(newFile, Charset.forName(charset));
             return write;
         } catch (IOException e) {
             throw new IllegalArgumentException(newFile.getAbsolutePath() + "文件读取异常", e);
@@ -207,8 +218,8 @@ public class FileDataWriter implements Closeable {
         cfg.setNewIndexFixedWidth(indexFixedWidth);
         cfg.setNewCurrentRow(currentRow);
         cfg.setIndexFixedWidthFactor(indexFixedWidthFactor);
-        cfg.setNewDataFilePointer(contentRafWriter.getRaf().getFilePointer());
-        cfg.setNewIndexFilePointer(indexRafWriter.getRaf().getFilePointer());
+        cfg.setNewDataFilePointer(contentRafWriter.getPosition());
+        cfg.setNewIndexFilePointer(indexRafWriter.getPosition());
         FileUtil.writeUtf8String(JSON.toJSONString(cfg), new File(buildPath(this.path, Constants.CFG_FILE_NAME)));
 
         closeWriter();
@@ -228,6 +239,9 @@ public class FileDataWriter implements Closeable {
          */
         private Long indexFixedWidthFactor = 3l;
         private WriteMode writeMode = WriteMode.NOT_ALLOW_REPEATED;
+
+        private FileWriterFactory fileFactory = new BufferedRandomAccessFileWriterFactory();
+
 
         private FileDataWriterBuilder() {
         }
@@ -252,8 +266,13 @@ public class FileDataWriter implements Closeable {
             return this;
         }
 
+        public FileDataWriterBuilder withFileFactory(FileWriterFactory fileFactory) {
+            this.fileFactory = fileFactory;
+            return this;
+        }
+
         public FileDataWriter build(String path) throws IOException {
-            FileDataWriter fileDataWriter = new FileDataWriter(path, writeMode);
+            FileDataWriter fileDataWriter = new FileDataWriter(path, writeMode, fileFactory);
             if (!WriteMode.APPEND.equals(writeMode) || fileDataWriter.totalSize == 0) {
                 fileDataWriter.charset = this.charset;
                 fileDataWriter.fileMaxSize = this.fileMaxSize;

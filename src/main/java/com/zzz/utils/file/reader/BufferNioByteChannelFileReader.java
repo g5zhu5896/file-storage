@@ -10,12 +10,12 @@ import java.nio.channels.SeekableByteChannel;
 import java.nio.charset.Charset;
 import java.nio.file.Files;
 
-public class NioByteChannelFileReader implements FileReader {
+public class BufferNioByteChannelFileReader implements FileReader {
 
     private SeekableByteChannel channel;
     private BufferedReader bufferedReader;
 
-    public NioByteChannelFileReader(String file, Charset charset) throws IOException {
+    public BufferNioByteChannelFileReader(String file, Charset charset) throws IOException {
         channel = Files.newByteChannel(new File(file).toPath());
         bufferedReader = new BufferedReader(new InputStreamReader(Channels.newInputStream(channel), charset));
     }

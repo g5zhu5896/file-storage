@@ -12,6 +12,7 @@ public class BufferedRandomAccessFileWriter extends AbstractBufferFileWriter {
 
 
     public BufferedRandomAccessFileWriter(File file, Charset charset) throws IOException {
+        super(charset);
         raf = new RandomAccessFile(file, "rw");
         OutputStreamWriter outputStreamWriter = new OutputStreamWriter(new FileOutputStream(raf.getFD()), charset);
         init(outputStreamWriter);

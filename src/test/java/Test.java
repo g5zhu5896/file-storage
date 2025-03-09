@@ -1,10 +1,16 @@
+import cn.hutool.core.util.StrUtil;
 import com.zzz.FileDataPageReader;
 import com.zzz.FileDataWriter;
 import com.zzz.enums.WriteMode;
+import com.zzz.utils.file.reader.factory.BufferedRandomAccessFileReaderFactory;
 import com.zzz.utils.file.reader.factory.FileReaderFactory;
-import com.zzz.utils.file.reader.factory.NioFileReaderFactory;
+import com.zzz.utils.file.reader.factory.BufferNioByteChannelFileReaderFactory;
+import com.zzz.utils.file.writer.factory.BufferNioByteChannelFileWriterFactory;
+import com.zzz.utils.file.writer.factory.BufferedRandomAccessFileWriterFactory;
+import com.zzz.utils.file.writer.factory.FileWriterFactory;
 
 import java.io.File;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -16,12 +22,15 @@ import java.util.concurrent.Executors;
 public class Test {
     static ExecutorService executor = Executors.newFixedThreadPool(1);
 
-    private static FileReaderFactory fileFactory;
+    private static FileReaderFactory fileReaderFactory;
+    private static FileWriterFactory fileWriterFactory;
 
     public static void main(String[] args) {
         String path = "test";
-        fileFactory = new NioFileReaderFactory();
+        fileReaderFactory = new BufferNioByteChannelFileReaderFactory();
+        fileWriterFactory = new BufferNioByteChannelFileWriterFactory();
         deleteFolder(path);
+
         Long start = System.currentTimeMillis();
         test(path, WriteMode.NOT_ALLOW_REPEATED);
         Long time1 = (System.currentTimeMillis() - start) / 1000;
@@ -32,7 +41,8 @@ public class Test {
 //        Long time2 = (System.currentTimeMillis() - start) / 1000;
 //
 //        deleteFolder(path);
-//        fileFactory = new BufferedRandomAccessFileFactory();
+//        fileReaderFactory = new BufferedRandomAccessFileReaderFactory();
+//        fileWriterFactory = new BufferedRandomAccessFileWriterFactory();
 //        start = System.currentTimeMillis();
 //        test(path, WriteMode.NOT_ALLOW_REPEATED);
 //        Long time3 = (System.currentTimeMillis() - start) / 1000;
@@ -47,6 +57,8 @@ public class Test {
 //        System.out.println(time4);
         executor.shutdown();
     }
+
+    private static final String SUB_STR = "我的";
 
     private static void test(String path, WriteMode writeMode) {
         //        test(path + File.separator + 20000 + "_" + 20000, 20000, 20000, 159, 1.7d, writeMode);
@@ -104,34 +116,37 @@ public class Test {
             if (WriteMode.APPEND.equals(writeMode)) {
                 Integer halfTotalSize = realTotalSize / 2;
                 //写入文件
-                try (FileDataWriter fileDataWriter = FileDataWriter.builder().withFileMaxSize(fileMaxSize).withWriteMode(writeMode).build(path)) {
+                try (FileDataWriter fileDataWriter = FileDataWriter.builder().withFileMaxSize(fileMaxSize).withWriteMode(writeMode)
+                        .withFileFactory(fileWriterFactory).build(path)) {
                     for (Integer i = 1; i < halfTotalSize; i++) {
-                        fileDataWriter.write(i + "");
+                        fileDataWriter.write(i + SUB_STR);
                     }
                 } catch (IOException e) {
-                    throw new IllegalArgumentException("写入异常",e);
+                    throw new IllegalArgumentException("写入异常", e);
                 }
-                try (FileDataWriter fileDataWriter = FileDataWriter.builder().withFileMaxSize(fileMaxSize).withWriteMode(writeMode).build(path)) {
+                try (FileDataWriter fileDataWriter = FileDataWriter.builder().withFileMaxSize(fileMaxSize).withWriteMode(writeMode)
+                        .withFileFactory(fileWriterFactory).build(path)) {
                     for (Integer i = halfTotalSize; i <= realTotalSize; i++) {
-                        fileDataWriter.write(i + "");
+                        fileDataWriter.write(i + SUB_STR);
                     }
                 } catch (IOException e) {
-                    throw new IllegalArgumentException("写入异常",e);
+                    throw new IllegalArgumentException("写入异常", e);
                 }
             } else {
                 //写入文件
-                try (FileDataWriter fileDataWriter = FileDataWriter.builder().withFileMaxSize(fileMaxSize).withWriteMode(writeMode).build(path)) {
+                try (FileDataWriter fileDataWriter = FileDataWriter.builder().withFileMaxSize(fileMaxSize).withWriteMode(writeMode)
+                        .withFileFactory(fileWriterFactory).build(path)) {
                     for (Integer i = 1; i <= realTotalSize; i++) {
-                        fileDataWriter.write(i + "");
+                        fileDataWriter.write(i + SUB_STR);
                     }
                 } catch (IOException e) {
-                    throw new IllegalArgumentException("写入异常",e);
+                    throw new IllegalArgumentException("写入异常", e);
                 }
             }
 
         }
 
-        FileDataPageReader fileDataPageReader = FileDataPageReader.builder().build(path);
+        FileDataPageReader fileDataPageReader = FileDataPageReader.builder().withFileFactory(fileReaderFactory).build(path);
         Integer lastNum = 0;
 
         //指定起始行读取
@@ -139,7 +154,9 @@ public class Test {
         Integer startIndex = totalSize - size;
         Integer firstNum = null;
         for (int i = 0; i < size; i++) {
-            List<String> strings = fileDataPageReader.read(startIndex, size);
+            List<String> strings = fileDataPageReader.read(startIndex, size, s -> {
+                return StrUtil.removeSuffix(s, SUB_STR);
+            });
             System.out.println(startIndex + " " + strings.size());
             System.out.println(strings);
             lastNum = null;
@@ -169,7 +186,9 @@ public class Test {
         lastNum = 0;
         boolean first = true;
         while (true) {
-            List<String> strings = fileDataPageReader.readPage(page, pageSize);
+            List<String> strings = fileDataPageReader.readPage(page, pageSize, s -> {
+                return StrUtil.removeSuffix(s, SUB_STR);
+            });
             if (strings.isEmpty()) {
                 if (lastNum != realTotalSize) {
                     throw new IllegalArgumentException("未正确读取到最后一行");

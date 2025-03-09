@@ -7,7 +7,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.Charset;
 
-public class NioFileWriterFactory implements FileWriterFactory {
+public class BufferNioByteChannelFileWriterFactory implements FileWriterFactory {
 
     @Override
     public FileWriter fileWriter(File file, Charset charset) throws IOException {
